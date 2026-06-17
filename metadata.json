@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Church Attendance Management",
+  "description": "A high-performance offline-first Progressive Web App for church attendance operations, member directory management, and QR ID card creation.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
