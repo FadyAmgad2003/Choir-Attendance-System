@@ -14,7 +14,8 @@ export const Scanner: React.FC = () => {
     events,
     deleteEvent,
     t, 
-    language 
+    language,
+    updateSupabaseConfig
   } = useApp();
 
   const [scanResult, setScanResult] = useState<{ success: boolean; message: string; duplicate?: boolean } | null>(null);
@@ -27,6 +28,33 @@ export const Scanner: React.FC = () => {
 
   // Simulated & Actual scan triggers
   const handleSimulateScan = (code: string) => {
+    // 1. Intercept Supabase configuration sync QR instead of a parishioner check-in ID badge
+    if (code.trim().startsWith('cams_config:')) {
+      try {
+        const jsonStr = code.trim().substring('cams_config:'.length);
+        const config = JSON.parse(jsonStr);
+        if (config.url && config.key) {
+          updateSupabaseConfig(config.url, config.key);
+          setScanResult({
+            success: true,
+            message: language === 'ar' 
+              ? '⚡ تم الربط المباشر ومزامنة إعدادات قاعدة البيانات بنجاح في اللحظة نفسها!' 
+              : '⚡ Cloud Link Activated! Supabase credentials synced and linked successfully.'
+          });
+          setLastScannedName(language === 'ar' ? 'مزامنة السحابية وتكامل الأجهزة' : 'Cloud Sync Link');
+          setLastScannedCode('SUCCESS');
+          
+          // Clear alert after 4 seconds
+          setTimeout(() => {
+            setScanResult(null);
+          }, 4000);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to parse synchronized QR configuration:', err);
+      }
+    }
+
     const cleanCode = code.trim().toUpperCase();
     const matched = members.find(m => m.memberCode === cleanCode);
     if (matched) {
@@ -42,10 +70,9 @@ export const Scanner: React.FC = () => {
     setScanResult(result);
 
     // Clear alert after 4 seconds
-    const timer = setTimeout(() => {
+    setTimeout(() => {
       setScanResult(null);
     }, 4000);
-    return () => clearTimeout(timer);
   };
 
   // Webcam stream management using native Decoders

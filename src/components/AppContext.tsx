@@ -53,6 +53,7 @@ interface AppContextType {
   supabaseUrl: string;
   supabaseAnonKey: string;
   isSupabaseConnected: boolean;
+  supabaseError: string | null;
   updateSupabaseConfig: (url: string, key: string) => void;
 }
 
@@ -105,6 +106,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return getSupabaseCredentials().key;
   });
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
   const [syncTrigger, setSyncTrigger] = useState<number>(0);
 
   const updateSupabaseConfig = (url: string, key: string) => {
@@ -114,6 +116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSupabaseAnonKey(key.trim());
     resetSupabaseClient();
     setIsSupabaseConnected(false);
+    setSupabaseError(null);
     // Trigger real-time synchronization re-run
     setSyncTrigger(prev => prev + 1);
   };
@@ -273,6 +276,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const fetchInitialData = async (client: any) => {
     try {
+      setSupabaseError(null);
+
+      // Perform a clean connection test
+      const { data: testData, error: testError } = await client.from('settings').select('id').limit(1) as any;
+      if (testError) {
+        console.error('Supabase test select error:', testError);
+        if (testError.code === '42P01') {
+          // Tables do not exist!
+          setSupabaseError(language === 'ar'
+            ? 'خطأ: جداول قاعدة البيانات غير موجودة! يرجى أولاً نسخ رمز الـ SQL من لوحة الإعدادات وتأكيد تشغيله (SQL Editor) داخل Supabase.'
+            : 'Error: Database tables not found! Please copy the SQL setup code under settings, paste it in Supabase SQL Editor and hit Run.');
+        } else if (testError.message && (testError.message.includes('JWT') || testError.status === 401 || testError.status === 403)) {
+          setSupabaseError(language === 'ar'
+            ? 'خطأ مصادقة: رمز الـ Anon Key غير صحيح أو غير متطابق مع هذا المشروع.'
+            : 'Authentication Error: The Supabase Anon Key is invalid or expired.');
+        } else {
+          setSupabaseError(testError.message || JSON.stringify(testError));
+        }
+        setIsSupabaseConnected(false);
+        return;
+      }
+
       // 1. Fetch settings config first
       const { data: settingsData, error: settingsError } = await client.from('settings').select('*').eq('id', 'config').maybeSingle() as any;
       if (!settingsError && settingsData) {
@@ -338,9 +363,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // Connection is fully successful
+      setSupabaseError(null);
       setIsSupabaseConnected(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Supabase initial fetch failed:', err);
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('fetch')) {
+        setSupabaseError(language === 'ar'
+          ? 'خطأ في الشبكة: تعذر الاتصال بـ Supabase. يرجى التحقق من الرابط والاتصال بشبكة الإنترنت.'
+          : 'Network Error: Cannot establish database socket connection. Please check that your Supabase project URL is correct and active.');
+      } else {
+        setSupabaseError(errMsg);
+      }
       setIsSupabaseConnected(false);
     }
   };
@@ -791,6 +825,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabaseUrl,
       supabaseAnonKey,
       isSupabaseConnected,
+      supabaseError,
       updateSupabaseConfig
     }}>
       {children}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from './AppContext';
-import { Settings as SettingsIcon, Globe, Building, Image, HelpCircle, Database, CheckCircle, AlertTriangle, Key, Copy, Check } from 'lucide-react';
+import { QRCodeImage } from '../qr';
+import { Settings as SettingsIcon, Globe, Building, Image, HelpCircle, Database, CheckCircle, AlertTriangle, Key, Copy, Check, Smartphone } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const { 
@@ -14,6 +15,7 @@ export const Settings: React.FC = () => {
     supabaseUrl,
     supabaseAnonKey,
     isSupabaseConnected,
+    supabaseError,
     updateSupabaseConfig
   } = useApp();
 
@@ -145,13 +147,24 @@ create table if not exists public.settings (
 );
 
 -- 8. Turn On Realtime Synchronization Alerts
-alter publication supabase_realtime add table public.organizations;
-alter publication supabase_realtime add table public.churches;
-alter publication supabase_realtime add table public.choirs;
-alter publication supabase_realtime add table public.admins;
-alter publication supabase_realtime add table public.members;
-alter publication supabase_realtime add table public.events;
-alter publication supabase_realtime add table public.settings;
+drop publication if exists supabase_realtime;
+create publication supabase_realtime for table 
+  public.organizations, 
+  public.churches, 
+  public.choirs, 
+  public.admins, 
+  public.members, 
+  public.events, 
+  public.settings;
+
+-- 9. Disable Row Level Security (RLS) on all tables to allow bidirectional Laptop/Mobile scanning & sync without complex auth barriers
+alter table public.organizations disable row level security;
+alter table public.churches disable row level security;
+alter table public.choirs disable row level security;
+alter table public.admins disable row level security;
+alter table public.members disable row level security;
+alter table public.events disable row level security;
+alter table public.settings disable row level security;
 `;
 
   const copySQLToClipboard = () => {
@@ -367,6 +380,16 @@ alter publication supabase_realtime add table public.settings;
               </div>
             )}
 
+            {supabaseError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-250 text-rose-850 rounded-lg space-y-1">
+                <p className="font-bold text-[11px] flex items-center gap-1.5 text-rose-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                  {language === 'ar' ? 'تنبيه الاتصال بـ Supabase:' : 'Supabase Integration Issue:'}
+                </p>
+                <p className="text-[10px] whitespace-pre-line leading-relaxed text-rose-900 font-semibold">{supabaseError}</p>
+              </div>
+            )}
+
             <p className="text-[11px] leading-relaxed text-slate-500">
               {language === 'ar'
                 ? 'استبدل خادم فايربيس بقاعدة بيانات سوبابيز (Supabase Postgres) للحصول على مزامنة ثنائية مذهلة ولحظية بين اللابتوب والموبايل دون أي حاجة للتحديث اليدوي.'
@@ -382,10 +405,10 @@ alter publication supabase_realtime add table public.settings;
                 <div className="relative">
                   <Database className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
                   <input
-                    type="password"
+                    type="text"
                     value={dbUrl}
                     onChange={(e) => setDbUrl(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                     placeholder="https://your-project.supabase.co"
                   />
                 </div>
@@ -402,7 +425,7 @@ alter publication supabase_realtime add table public.settings;
                     type="password"
                     value={dbKey}
                     onChange={(e) => setDbKey(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                     placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   />
                 </div>
@@ -435,6 +458,29 @@ alter publication supabase_realtime add table public.settings;
                 </button>
               )}
             </div>
+
+            {/* Shared QR Code Sync Bridge */}
+            {isSupabaseConnected && (
+              <div className="mt-5 pt-5 border-t border-slate-100 flex flex-col md:flex-row items-center gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200/40">
+                <div className="shrink-0 bg-white p-2.5 rounded-lg shadow-sm border border-slate-200">
+                  <QRCodeImage 
+                    text={`cams_config:${JSON.stringify({ url: supabaseUrl, key: supabaseAnonKey })}`}
+                    size={110} 
+                  />
+                </div>
+                <div className="space-y-1 text-slate-650 leading-relaxed text-[10px]">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-indigo-700">
+                    <Smartphone className="h-4 w-4" />
+                    {language === 'ar' ? '📱 الربط المباشر بالموبايل' : '📱 Sync/Link Mobile Device'}
+                  </span>
+                  <p className="text-slate-500 font-medium">
+                    {language === 'ar' 
+                      ? 'لربط هاتفك المحمول أو تابلت الخادم المساعد تلقائياً دون كتابة أي شيء: افتح التطبيق على هاتف المحمول، اذهب لتبويب "الماسح" (Scanner) بالأسفل، ثم قم بمسح هذا الرمز ضوئياً بكاميرا الهاتف في الحال للأمان الكامل ومزامنة الحضور!' 
+                      : 'To automatically sync this configuration to helper mobile tablets without manual typing: Open this app on that phone, visit the "Scanner" tab, and scan this QR code using the live camera. It will securely establish the real-time link instantly!'}
+                  </p>
+                </div>
+              </div>
+            )}
           </form>
 
         </div>
