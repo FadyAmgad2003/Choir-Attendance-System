@@ -17,6 +17,15 @@ export const Settings: React.FC = () => {
   const [localLogoUrl, setLocalLogoUrl] = useState(logoUrl);
   const [successMsg, setSuccessMsg] = useState('');
 
+  // Keep local inputs in sync with Firestore settings updates
+  React.useEffect(() => {
+    setLocalOrgName(orgName);
+  }, [orgName]);
+
+  React.useEffect(() => {
+    setLocalLogoUrl(logoUrl);
+  }, [logoUrl]);
+
   // Seal logo presets for church selection
   const logoPresets = [
     'https://images.unsplash.com/photo-1548625361-155de0cbb565?w=150&q=80', // Celtic Cross gold icon

@@ -265,82 +265,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 6. Establish Real-time Sync listeners with Firebase Firestore
   useEffect(() => {
-    seedDatabaseIfEmpty().then(() => {
-      // Subscribe to admins
-      const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
-        const list: UserAccount[] = [];
-        snap.forEach((doc) => list.push(doc.data() as UserAccount));
-        setAdmins(list);
-        localStorage.setItem('cams_admins', JSON.stringify(list));
-      });
+    // Run seeding asynchronously in background
+    seedDatabaseIfEmpty().catch(console.error);
 
-      // Subscribe to organizations
-      const unsubOrgs = onSnapshot(collection(db, 'organizations'), (snap) => {
-        const list: Organization[] = [];
-        snap.forEach((doc) => list.push(doc.data() as Organization));
-        setOrganizations(list);
-        localStorage.setItem('cams_orgs', JSON.stringify(list));
-      });
+    // Subscribe to admins
+    const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
+      const list: UserAccount[] = [];
+      snap.forEach((doc) => list.push(doc.data() as UserAccount));
+      setAdmins(list);
+      localStorage.setItem('cams_admins', JSON.stringify(list));
+    }, console.error);
 
-      // Subscribe to churches
-      const unsubChurches = onSnapshot(collection(db, 'churches'), (snap) => {
-        const list: Church[] = [];
-        snap.forEach((doc) => list.push(doc.data() as Church));
-        setChurches(list);
-        localStorage.setItem('cams_churches', JSON.stringify(list));
-      });
+    // Subscribe to organizations
+    const unsubOrgs = onSnapshot(collection(db, 'organizations'), (snap) => {
+      const list: Organization[] = [];
+      snap.forEach((doc) => list.push(doc.data() as Organization));
+      setOrganizations(list);
+      localStorage.setItem('cams_orgs', JSON.stringify(list));
+    }, console.error);
 
-      // Subscribe to choirs
-      const unsubChoirs = onSnapshot(collection(db, 'choirs'), (snap) => {
-        const list: ChoirDepartment[] = [];
-        snap.forEach((doc) => list.push(doc.data() as ChoirDepartment));
-        setChoirs(list);
-        localStorage.setItem('cams_choirs', JSON.stringify(list));
-      });
+    // Subscribe to churches
+    const unsubChurches = onSnapshot(collection(db, 'churches'), (snap) => {
+      const list: Church[] = [];
+      snap.forEach((doc) => list.push(doc.data() as Church));
+      setChurches(list);
+      localStorage.setItem('cams_churches', JSON.stringify(list));
+    }, console.error);
 
-      // Subscribe to members
-      const unsubMembers = onSnapshot(collection(db, 'members'), (snap) => {
-        const list: Member[] = [];
-        snap.forEach((doc) => list.push(doc.data() as Member));
-        list.sort((a, b) => b.id.localeCompare(a.id));
-        setMembers(list);
-        localStorage.setItem('cams_members', JSON.stringify(list));
-      });
+    // Subscribe to choirs
+    const unsubChoirs = onSnapshot(collection(db, 'choirs'), (snap) => {
+      const list: ChoirDepartment[] = [];
+      snap.forEach((doc) => list.push(doc.data() as ChoirDepartment));
+      setChoirs(list);
+      localStorage.setItem('cams_choirs', JSON.stringify(list));
+    }, console.error);
 
-      // Subscribe to events
-      const unsubEvents = onSnapshot(collection(db, 'events'), (snap) => {
-        const list: AttendanceEvent[] = [];
-        snap.forEach((doc) => list.push(doc.data() as AttendanceEvent));
-        list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-        setEvents(list);
-        localStorage.setItem('cams_events', JSON.stringify(list));
-      });
+    // Subscribe to members
+    const unsubMembers = onSnapshot(collection(db, 'members'), (snap) => {
+      const list: Member[] = [];
+      snap.forEach((doc) => list.push(doc.data() as Member));
+      list.sort((a, b) => b.id.localeCompare(a.id));
+      setMembers(list);
+      localStorage.setItem('cams_members', JSON.stringify(list));
+    }, console.error);
 
-      // Subscribe to settings config
-      const unsubSettings = onSnapshot(doc(db, 'settings', 'config'), (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.orgName) {
-            setOrgNameState(data.orgName);
-            localStorage.setItem('cams_org_name', data.orgName);
-          }
-          if (data.logoUrl) {
-            setLogoUrlState(data.logoUrl);
-            localStorage.setItem('cams_logo_url', data.logoUrl);
-          }
+    // Subscribe to events
+    const unsubEvents = onSnapshot(collection(db, 'events'), (snap) => {
+      const list: AttendanceEvent[] = [];
+      snap.forEach((doc) => list.push(doc.data() as AttendanceEvent));
+      list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      setEvents(list);
+      localStorage.setItem('cams_events', JSON.stringify(list));
+    }, console.error);
+
+    // Subscribe to settings config
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'config'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.orgName) {
+          setOrgNameState(data.orgName);
+          localStorage.setItem('cams_org_name', data.orgName);
         }
-      });
+        if (data.logoUrl) {
+          setLogoUrlState(data.logoUrl);
+          localStorage.setItem('cams_logo_url', data.logoUrl);
+        }
+      }
+    }, console.error);
 
-      return () => {
-        unsubAdmins();
-        unsubOrgs();
-        unsubChurches();
-        unsubChoirs();
-        unsubMembers();
-        unsubEvents();
-        unsubSettings();
-      };
-    }).catch(console.error);
+    return () => {
+      unsubAdmins();
+      unsubOrgs();
+      unsubChurches();
+      unsubChoirs();
+      unsubMembers();
+      unsubEvents();
+      unsubSettings();
+    };
   }, []);
 
   // Reactive pruning: If members are deleted/cleared, automatically clean up their corresponding attendance logs
