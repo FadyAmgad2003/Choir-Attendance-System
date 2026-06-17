@@ -114,25 +114,6 @@ export const Login: React.FC = () => {
           </button>
         </form>
 
-        {/* Dynamic testing tip badge box */}
-        <div className="mt-8 pt-4 border-t border-slate-100 text-[10px] text-slate-500 leading-normal space-y-1.5">
-          <p className="font-bold text-indigo-600 tracking-wide uppercase">
-            {language === 'ar' ? 'حسابات التجربة والاختبار المعتمدة:' : 'SECURE TESTING CREDENTIALS:'}
-          </p>
-          <div className="grid grid-cols-1 gap-2">
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <p className="text-slate-700 font-bold">🛡️ {language === 'ar' ? 'المشرف العام (سوبر أدمن)' : 'Archdiocese Super Admin'}:</p>
-              <p className="font-mono mt-0.5 text-slate-500">email: <span className="text-indigo-600 font-semibold">superadmin@church.org</span></p>
-              <p className="font-mono text-slate-500">password: <span className="text-indigo-600 font-semibold">super</span></p>
-            </div>
-            <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <p className="text-slate-700 font-bold">💼 {language === 'ar' ? 'المدير المنظم (أدمن)' : 'Parish Organizing Admin'}:</p>
-              <p className="font-mono mt-0.5 text-slate-500">email: <span className="text-indigo-600 font-semibold">fadyamgd126@gmail.com</span></p>
-              <p className="font-mono text-slate-500">password: <span className="text-indigo-600 font-semibold">admin</span></p>
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
   );
