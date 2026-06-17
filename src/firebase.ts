@@ -5,5 +5,5 @@ import firebaseConfig from '../firebase-applet-config.json';
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Cloud Firestore and export it
-export const db = getFirestore(app);
+// Initialize Cloud Firestore and export it, passing the custom firestoreDatabaseId if configured
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
