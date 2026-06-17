@@ -1,6 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, UserAccount, Organization, Church, ChoirDepartment, Member, AttendanceEvent } from '../types';
 import { INITIAL_ORGANIZATIONS, INITIAL_CHURCHES, INITIAL_CHOIRS, INITIAL_MEMBERS, INITIAL_EVENTS, TRANSLATIONS, AppLanguage } from '../data';
+import { db } from '../firebase';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  getDocs, 
+  writeBatch 
+} from 'firebase/firestore';
 
 interface AppContextType {
   // Localization
@@ -160,13 +171,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setOrgName = (name: string) => {
     setOrgNameState(name);
     localStorage.setItem('cams_org_name', name);
+    setDoc(doc(db, 'settings', 'config'), { orgName: name, logoUrl }, { merge: true }).catch(console.error);
   };
   const setLogoUrl = (url: string) => {
     setLogoUrlState(url);
     localStorage.setItem('cams_logo_url', url);
+    setDoc(doc(db, 'settings', 'config'), { orgName, logoUrl: url }, { merge: true }).catch(console.error);
   };
 
-  // 5. Raw Lists backed by localStorage
+  // 5. Raw Lists backed by localStorage & populated by Firebase
   const [organizations, setOrganizations] = useState<Organization[]>(() => {
     const cached = localStorage.getItem('cams_orgs');
     return cached ? JSON.parse(cached) : INITIAL_ORGANIZATIONS;
@@ -192,37 +205,155 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return cached ? JSON.parse(cached) : INITIAL_EVENTS;
   });
 
-  // Keep localStorage up-to-date with raw changes
-  useEffect(() => {
-    localStorage.setItem('cams_admins', JSON.stringify(admins));
-  }, [admins]);
+  // Seeding function to trigger if collections are empty
+  const seedDatabaseIfEmpty = async () => {
+    try {
+      const membersSnap = await getDocs(collection(db, 'members'));
+      if (membersSnap.empty) {
+        console.log('Database is empty. Seeding with initial data...');
+        const batch = writeBatch(db);
 
-  useEffect(() => {
-    localStorage.setItem('cams_orgs', JSON.stringify(organizations));
-  }, [organizations]);
+        // 1. Seed admins
+        const initialAdmins = [
+          { id: 'usr-super', name: 'His Eminence Bishop Anba Antonios', email: 'superadmin@church.org', role: 'super_admin' as const, password: 'super', status: 'active' as const },
+          { id: 'usr-admin1', name: 'Mina Shawky', email: 'fadyamgd126@gmail.com', role: 'admin' as const, password: 'admin', organizationId: 'org-stmary', status: 'active' as const },
+          { id: 'usr-admin2', name: 'Eng. Amgad Adly', email: 'amgad@churchdiocese.org', role: 'admin' as const, password: 'admin', organizationId: 'org-stmary', status: 'active' as const },
+          { id: 'usr-officer1', name: 'Peter Mansour', email: 'peter.m@diocesestaff.org', role: 'officer' as const, password: 'officer', organizationId: 'org-stmary', choirId: 'sub-stmary-choir1', status: 'active' as const }
+        ];
+        initialAdmins.forEach(admin => {
+          batch.set(doc(db, 'admins', admin.id), admin);
+        });
 
-  useEffect(() => {
-    localStorage.setItem('cams_churches', JSON.stringify(churches));
-  }, [churches]);
+        // 2. Seed organizations
+        INITIAL_ORGANIZATIONS.forEach(org => {
+          batch.set(doc(db, 'organizations', org.id), org);
+        });
 
-  useEffect(() => {
-    localStorage.setItem('cams_choirs', JSON.stringify(choirs));
-  }, [choirs]);
+        // 3. Seed churches
+        INITIAL_CHURCHES.forEach(church => {
+          batch.set(doc(db, 'churches', church.id), church);
+        });
 
-  useEffect(() => {
-    localStorage.setItem('cams_members', JSON.stringify(members));
-  }, [members]);
+        // 4. Seed choirs
+        INITIAL_CHOIRS.forEach(choir => {
+          batch.set(doc(db, 'choirs', choir.id), choir);
+        });
 
+        // 5. Seed members
+        INITIAL_MEMBERS.forEach(member => {
+          batch.set(doc(db, 'members', member.id), member);
+        });
+
+        // 6. Seed events
+        INITIAL_EVENTS.forEach(event => {
+          batch.set(doc(db, 'events', event.id), event);
+        });
+
+        // 7. Seed settings
+        batch.set(doc(db, 'settings', 'config'), {
+          orgName: 'St. Mary of Angels Diocese',
+          logoUrl: 'https://images.unsplash.com/photo-1548625361-155de0cbb565?w=150&q=80'
+        });
+
+        await batch.commit();
+        console.log('Database seeded successfully.');
+      }
+    } catch (err) {
+      console.error('Error seeding database:', err);
+    }
+  };
+
+  // 6. Establish Real-time Sync listeners with Firebase Firestore
   useEffect(() => {
-    localStorage.setItem('cams_events', JSON.stringify(events));
-  }, [events]);
+    seedDatabaseIfEmpty().then(() => {
+      // Subscribe to admins
+      const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
+        const list: UserAccount[] = [];
+        snap.forEach((doc) => list.push(doc.data() as UserAccount));
+        setAdmins(list);
+        localStorage.setItem('cams_admins', JSON.stringify(list));
+      });
+
+      // Subscribe to organizations
+      const unsubOrgs = onSnapshot(collection(db, 'organizations'), (snap) => {
+        const list: Organization[] = [];
+        snap.forEach((doc) => list.push(doc.data() as Organization));
+        setOrganizations(list);
+        localStorage.setItem('cams_orgs', JSON.stringify(list));
+      });
+
+      // Subscribe to churches
+      const unsubChurches = onSnapshot(collection(db, 'churches'), (snap) => {
+        const list: Church[] = [];
+        snap.forEach((doc) => list.push(doc.data() as Church));
+        setChurches(list);
+        localStorage.setItem('cams_churches', JSON.stringify(list));
+      });
+
+      // Subscribe to choirs
+      const unsubChoirs = onSnapshot(collection(db, 'choirs'), (snap) => {
+        const list: ChoirDepartment[] = [];
+        snap.forEach((doc) => list.push(doc.data() as ChoirDepartment));
+        setChoirs(list);
+        localStorage.setItem('cams_choirs', JSON.stringify(list));
+      });
+
+      // Subscribe to members
+      const unsubMembers = onSnapshot(collection(db, 'members'), (snap) => {
+        const list: Member[] = [];
+        snap.forEach((doc) => list.push(doc.data() as Member));
+        list.sort((a, b) => b.id.localeCompare(a.id));
+        setMembers(list);
+        localStorage.setItem('cams_members', JSON.stringify(list));
+      });
+
+      // Subscribe to events
+      const unsubEvents = onSnapshot(collection(db, 'events'), (snap) => {
+        const list: AttendanceEvent[] = [];
+        snap.forEach((doc) => list.push(doc.data() as AttendanceEvent));
+        list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setEvents(list);
+        localStorage.setItem('cams_events', JSON.stringify(list));
+      });
+
+      // Subscribe to settings config
+      const unsubSettings = onSnapshot(doc(db, 'settings', 'config'), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.orgName) {
+            setOrgNameState(data.orgName);
+            localStorage.setItem('cams_org_name', data.orgName);
+          }
+          if (data.logoUrl) {
+            setLogoUrlState(data.logoUrl);
+            localStorage.setItem('cams_logo_url', data.logoUrl);
+          }
+        }
+      });
+
+      return () => {
+        unsubAdmins();
+        unsubOrgs();
+        unsubChurches();
+        unsubChoirs();
+        unsubMembers();
+        unsubEvents();
+        unsubSettings();
+      };
+    }).catch(console.error);
+  }, []);
 
   // Reactive pruning: If members are deleted/cleared, automatically clean up their corresponding attendance logs
   useEffect(() => {
     const existingCodes = new Set(members.map(m => m.memberCode));
-    const isStale = events.some(e => !existingCodes.has(e.memberCode));
-    if (isStale) {
-      setEvents(prev => prev.filter(e => existingCodes.has(e.memberCode)));
+    const staleEvents = events.filter(e => !existingCodes.has(e.memberCode));
+    if (staleEvents.length > 0) {
+      // Prune stale events in Firestore too
+      const batch = writeBatch(db);
+      staleEvents.forEach(e => {
+        batch.delete(doc(db, 'events', e.id));
+      });
+      batch.commit().catch(console.error);
     }
   }, [members]);
 
@@ -251,30 +382,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Active'
     };
 
-    setMembers(prev => [newMember, ...prev]);
+    setDoc(doc(db, 'members', id), newMember).catch(console.error);
     return newMember;
   };
 
   const updateMember = (updated: Member) => {
-    setMembers(prev => prev.map(m => m.id === updated.id ? updated : m));
+    setDoc(doc(db, 'members', updated.id), updated).catch(console.error);
   };
 
-  const deleteMembers = (ids: string[]) => {
+  const deleteMembers = async (ids: string[]) => {
     const codesToDelete = members.filter(m => ids.includes(m.id)).map(m => m.memberCode);
-    setMembers(prev => prev.filter(m => !ids.includes(m.id)));
-    setEvents(prev => prev.filter(e => !codesToDelete.includes(e.memberCode)));
+    const batch = writeBatch(db);
+    ids.forEach(id => {
+      batch.delete(doc(db, 'members', id));
+    });
+    const eventsToDelete = events.filter(e => codesToDelete.includes(e.memberCode));
+    eventsToDelete.forEach(e => {
+      batch.delete(doc(db, 'events', e.id));
+    });
+    await batch.commit().catch(console.error);
     setOfflineQueue(prev => prev.filter(code => !codesToDelete.includes(code)));
   };
 
-  const bulkImportMembers = (incomingMembers: Member[]) => {
-    setMembers(prev => {
-      const existingMap = new Map<string, Member>();
-      prev.forEach(m => existingMap.set(m.id, m));
-      incomingMembers.forEach(m => {
-        existingMap.set(m.id, m);
-      });
-      return Array.from(existingMap.values());
+  const bulkImportMembers = async (incomingMembers: Member[]) => {
+    const batch = writeBatch(db);
+    incomingMembers.forEach(m => {
+      batch.set(doc(db, 'members', m.id), m);
     });
+    await batch.commit().catch(console.error);
   };
 
   // 7. Action: Scan QR Member Code
@@ -332,24 +467,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       synced: true
     };
 
-    setEvents(prev => [newEvent, ...prev]);
+    setDoc(doc(db, 'events', newEvent.id), newEvent).catch(console.error);
     return { success: true, message: `${matchedMember.fullName} attendance registered successfully!` };
   };
 
   // Force flush of the offline cached events
-  const syncOfflineQueue = () => {
+  const syncOfflineQueue = async () => {
     if (offlineQueue.length === 0) return;
 
     const todayStr = new Date().toISOString().split('T')[0];
-    const newEvents: AttendanceEvent[] = [];
+    const batch = writeBatch(db);
+    let count = 0;
 
     offlineQueue.forEach((code, index) => {
       const matchedMember = members.find(m => m.memberCode === code);
       if (matchedMember && matchedMember.status === 'Active') {
         const isDuplicate = events.some(e => e.memberCode === code && e.date === todayStr);
         if (!isDuplicate) {
-          newEvents.push({
-            id: `evt-offline-${Date.now()}-${index}`,
+          const newId = `evt-offline-${Date.now()}-${index}`;
+          batch.set(doc(db, 'events', newId), {
+            id: newId,
             memberCode: code,
             adminId: currentUser?.id || 'system',
             adminName: currentUser?.name || 'System Admin',
@@ -359,28 +496,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             deviceInfo: 'Synced Sandbox Queue Cache',
             synced: true
           });
+          count++;
         }
       }
     });
 
-    if (newEvents.length > 0) {
-      setEvents(prev => [...newEvents, ...prev]);
+    if (count > 0) {
+      await batch.commit().catch(console.error);
     }
     setOfflineQueue([]);
   };
 
-  const clearAllEvents = () => {
-    setEvents([]);
+  const clearAllEvents = async () => {
+    const batch = writeBatch(db);
+    events.forEach(e => {
+      batch.delete(doc(db, 'events', e.id));
+    });
+    await batch.commit().catch(console.error);
   };
 
   const deleteEvent = (id: string) => {
-    setEvents(prev => prev.filter(e => e.id !== id));
+    deleteDoc(doc(db, 'events', id)).catch(console.error);
   };
 
   // 8. Super Admin provisions
   const provisionAdmin = (email: string, name: string, role: UserRole, orgId = 'org-stmary', password = 'admin') => {
+    const id = `usr-admin-${Date.now()}`;
     const newAdmin: UserAccount = {
-      id: `usr-admin-${Date.now()}`,
+      id,
       name,
       email,
       role,
@@ -388,15 +531,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       organizationId: role !== 'super_admin' ? orgId : undefined,
       status: 'active'
     };
-    setAdmins(prev => [...prev, newAdmin]);
+    setDoc(doc(db, 'admins', id), newAdmin).catch(console.error);
   };
 
   const revokeAdmin = (id: string) => {
-    setAdmins(prev => prev.filter(a => a.id !== id));
+    deleteDoc(doc(db, 'admins', id)).catch(console.error);
   };
 
   const updateAdmin = (updated: UserAccount) => {
-    setAdmins(prev => prev.map(a => a.id === updated.id ? updated : a));
+    setDoc(doc(db, 'admins', updated.id), updated).catch(console.error);
     if (currentUser?.id === updated.id) {
       setCurrentUser(updated);
       localStorage.setItem('cams_session', JSON.stringify(updated));
