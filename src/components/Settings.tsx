@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from './AppContext';
-import { Settings as SettingsIcon, Globe, Building, Image, HelpCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Globe, Building, Image, HelpCircle, Database, CheckCircle, AlertTriangle, Key, Copy, Check } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const { 
@@ -10,14 +10,24 @@ export const Settings: React.FC = () => {
     setLogoUrl, 
     language, 
     setLanguage, 
-    t 
+    t,
+    supabaseUrl,
+    supabaseAnonKey,
+    isSupabaseConnected,
+    updateSupabaseConfig
   } = useApp();
 
   const [localOrgName, setLocalOrgName] = useState(orgName);
   const [localLogoUrl, setLocalLogoUrl] = useState(logoUrl);
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Keep local inputs in sync with Firestore settings updates
+  // Supabase Local Inputs
+  const [dbUrl, setDbUrl] = useState(supabaseUrl);
+  const [dbKey, setDbKey] = useState(supabaseAnonKey);
+  const [dbSuccessMsg, setDbSuccessMsg] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+
+  // Keep local inputs in sync with settings updates
   React.useEffect(() => {
     setLocalOrgName(orgName);
   }, [orgName]);
@@ -25,6 +35,11 @@ export const Settings: React.FC = () => {
   React.useEffect(() => {
     setLocalLogoUrl(logoUrl);
   }, [logoUrl]);
+
+  React.useEffect(() => {
+    setDbUrl(supabaseUrl);
+    setDbKey(supabaseAnonKey);
+  }, [supabaseUrl, supabaseAnonKey]);
 
   // Seal logo presets for church selection
   const logoPresets = [
@@ -42,7 +57,109 @@ export const Settings: React.FC = () => {
     const timer = setTimeout(() => {
       setSuccessMsg('');
     }, 4000);
-    return () => clearTimeout(timer);
+  };
+
+  const handleConnectSupabase = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateSupabaseConfig(dbUrl, dbKey);
+    setDbSuccessMsg(language === 'ar' ? 'تم تحديث مفاتيح الاتصال وجاري الربط!' : 'Connection parameters updated! Synchronizing...');
+    const timer = setTimeout(() => {
+      setDbSuccessMsg('');
+    }, 4000);
+  };
+
+  const sqlSetupScript = `-- === COPY AND PASTE INTO SUPABASE SQL EDITOR ===
+
+-- 1. Create Table: Organizations
+create table if not exists public.organizations (
+  id text primary key,
+  name text not null,
+  "logoUrl" text,
+  "churchCount" int default 0
+);
+
+-- 2. Create Table: Churches
+create table if not exists public.churches (
+  id text primary key,
+  "organizationId" text,
+  name text not null,
+  location text
+);
+
+-- 3. Create Table: Choirs
+create table if not exists public.choirs (
+  id text primary key,
+  "churchId" text,
+  name text not null,
+  description text
+);
+
+-- 4. Create Table: Admins
+create table if not exists public.admins (
+  id text primary key,
+  name text not null,
+  email text not null,
+  role text not null,
+  password text not null,
+  "organizationId" text,
+  "choirId" text,
+  status text not null
+);
+
+-- 5. Create Table: Members
+create table if not exists public.members (
+  id text primary key,
+  "memberCode" text not null,
+  "fullName" text not null,
+  gender text,
+  "profileImageUrl" text,
+  "mobileNumber" text,
+  "parentMobileNumber" text,
+  school text,
+  "educationStage" text,
+  "memberType" text,
+  status text not null,
+  "joinDate" text,
+  "choirId" text,
+  notes text
+);
+
+-- 6. Create Table: Events
+create table if not exists public.events (
+  id text primary key,
+  "memberCode" text not null,
+  "adminId" text,
+  "adminName" text,
+  timestamp text not null,
+  date text not null,
+  "choirId" text,
+  "deviceInfo" text,
+  synced boolean default true
+);
+
+-- 7. Create Table: Settings Configs
+create table if not exists public.settings (
+  id text primary key default 'config',
+  "orgName" text,
+  "logoUrl" text
+);
+
+-- 8. Turn On Realtime Synchronization Alerts
+alter publication supabase_realtime add table public.organizations;
+alter publication supabase_realtime add table public.churches;
+alter publication supabase_realtime add table public.choirs;
+alter publication supabase_realtime add table public.admins;
+alter publication supabase_realtime add table public.members;
+alter publication supabase_realtime add table public.events;
+alter publication supabase_realtime add table public.settings;
+`;
+
+  const copySQLToClipboard = () => {
+    navigator.clipboard.writeText(sqlSetupScript);
+    setIsCopied(true);
+    setTimeout(() => {
+      setIsCopied(false);
+    }, 2000);
   };
 
   return (
@@ -53,20 +170,26 @@ export const Settings: React.FC = () => {
           <SettingsIcon className="h-6 w-6 text-indigo-600" />
           {t.settings}
         </h1>
-        <p className="text-sm text-slate-550 mt-1">
-          {language === 'ar' ? 'تخصيص لغة النظام، اسم الأيبارشية الكبرى والشعار المعتمد.' : 'Configure default client language, diocesan titles, and corporate seal graphics.'}
+        <p className="text-sm text-slate-500 mt-1">
+          {language === 'ar' 
+            ? 'تخصيص لغة النظام، اسم الأيبارشية، وشعار الكورال وتكامل قاعدة البيانات السحابية.' 
+            : 'Configure default client language, diocesan titles, logo visuals, and your real-time cloud database.'}
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Left Columns - Form Configurations */}
-        <div className="lg:col-span-2">
-          <form onSubmit={handleUpdate} className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm space-y-5 text-xs">
-            
+        <div className="lg:col-span-2 space-y-6">
+          <form onSubmit={handleUpdate} className="bg-white border border-gray-150 rounded-xl p-6 shadow-sm space-y-5 text-xs">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+              <Building className="h-4 w-4 text-indigo-600" />
+              {language === 'ar' ? 'الإعدادات العامة واللغة' : 'General & Language Settings'}
+            </h2>
+
             {/* Success Alert */}
             {successMsg && (
-              <div id="settings-success-feedback" className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-center font-bold">
+              <div id="settings-success-feedback" className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-center font-bold">
                 {successMsg}
               </div>
             )}
@@ -79,7 +202,6 @@ export const Settings: React.FC = () => {
               </label>
               
               <div className="grid grid-cols-2 gap-3 max-w-sm">
-                {/* English Option */}
                 <button
                   type="button"
                   onClick={() => setLanguage('en')}
@@ -88,7 +210,6 @@ export const Settings: React.FC = () => {
                   English (LTR Layout)
                 </button>
 
-                {/* Arabic Option */}
                 <button
                   type="button"
                   onClick={() => setLanguage('ar')}
@@ -102,7 +223,6 @@ export const Settings: React.FC = () => {
             {/* Organization Name Input */}
             <div className="space-y-1.5 pt-3 border-t border-slate-50">
               <label className="font-semibold text-gray-700 uppercase tracking-wider block flex items-center gap-1">
-                <Building className="h-3.5 w-3.5 text-indigo-500" />
                 {t.orgName}
               </label>
               <input
@@ -130,7 +250,6 @@ export const Settings: React.FC = () => {
                   referrerPolicy="no-referrer"
                 />
                 <div className="flex-1 w-full space-y-2">
-                  {/* File Upload Zone */}
                   <div 
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
@@ -213,29 +332,169 @@ export const Settings: React.FC = () => {
             {/* Save Button */}
             <button
               type="submit"
-              className="cursor-pointer px-5 py-2 w-full max-w-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-100 transition-all"
+              className="cursor-pointer px-5 py-2.5 w-full max-w-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-100 transition-all"
             >
               {t.updateSettingsBtn}
             </button>
-
           </form>
+
+          {/* SUPABASE CONNECTION SETTINGS PANEL */}
+          <form onSubmit={handleConnectSupabase} className="bg-white border border-gray-150 rounded-xl p-6 shadow-sm space-y-5 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <Database className="h-4 w-4 text-emerald-600" />
+                {language === 'ar' ? 'ربط قاعدة بيانات سوبابيز (Supabase)' : 'Supabase Cloud Database Integration'}
+              </h2>
+              
+              {/* Dynamic Connection Status badge */}
+              {isSupabaseConnected ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-250 shrink-0 self-start sm:self-auto">
+                  <CheckCircle className="h-3 w-3 text-emerald-600 scale-110" />
+                  {language === 'ar' ? 'متصل ومزامن لحظياً ⚡' : '⚡ Connected & Synced Real-Time'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0 self-start sm:self-auto">
+                  <AlertTriangle className="h-3 w-3 text-amber-600" />
+                  {language === 'ar' ? 'نمط محلي (بدون سحابة) 📂' : '📂 Local Storage Backup Mode'}
+                </span>
+              )}
+            </div>
+
+            {/* DB Alert */}
+            {dbSuccessMsg && (
+              <div className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-center font-bold">
+                {dbSuccessMsg}
+              </div>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              {language === 'ar'
+                ? 'استبدل خادم فايربيس بقاعدة بيانات سوبابيز (Supabase Postgres) للحصول على مزامنة ثنائية مذهلة ولحظية بين اللابتوب والموبايل دون أي حاجة للتحديث اليدوي.'
+                : 'Replace Firebase with a lightning-fast Supabase database. Enables seamless bidirectional real-time synchronization between laptops, tablets, and scanner mobiles instantly.'}
+            </p>
+
+            <div className="space-y-4 pt-2">
+              {/* URL */}
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 uppercase tracking-wider block flex items-center gap-1">
+                  SUPABASE PROJECT URL:
+                </label>
+                <div className="relative">
+                  <Database className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
+                  <input
+                    type="password"
+                    value={dbUrl}
+                    onChange={(e) => setDbUrl(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="https://your-project.supabase.co"
+                  />
+                </div>
+              </div>
+
+              {/* Anon API Code key */}
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 uppercase tracking-wider block flex items-center gap-1">
+                  SUPABASE ANON KEY:
+                </label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
+                  <input
+                    type="password"
+                    value={dbKey}
+                    onChange={(e) => setDbKey(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 pl-9 pr-3 py-2 text-xs focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Quick action triggers */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                className="cursor-pointer px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-md shadow-emerald-50 transition-all flex items-center gap-1.5"
+              >
+                <Database className="h-3.5 w-3.5" />
+                {language === 'ar' ? 'ربط وتفعيل المزامنة' : 'Connect & Sync Real-Time'}
+              </button>
+
+              {(dbUrl || dbKey) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSupabaseConfig('', '');
+                    setDbUrl('');
+                    setDbKey('');
+                    setDbSuccessMsg(language === 'ar' ? 'تم مسح الربط والعودة للنمط المحلي.' : 'Disconnected. Switched back to Local Fallback Mode.');
+                    setTimeout(() => setDbSuccessMsg(''), 3000);
+                  }}
+                  className="cursor-pointer px-4 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 rounded-lg text-xs font-medium"
+                >
+                  {language === 'ar' ? 'قطع الاتصال' : 'Disconnect'}
+                </button>
+              )}
+            </div>
+          </form>
+
         </div>
 
-        {/* Informative Side Tips widget */}
-        <div className="lg:col-span-1 space-y-4">
-          <div className="bg-indigo-950 text-white rounded-xl p-6 shadow-md relative overflow-hidden">
-            <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-white/5 pointer-events-none" />
-            <h3 className="text-sm font-bold opacity-90">{language === 'ar' ? 'تعليمات الإعداد والربط الميداني' : 'Parish Deployment Check'}</h3>
-            <p className="text-[11px] opacity-75 mt-3 leading-relaxed">
+        {/* Informative Side Tips widget & Supabase instructions */}
+        <div className="lg:col-span-1 space-y-4 text-xs">
+          
+          {/* Quick Copy Database Creator Instructions */}
+          <div className="bg-slate-900 border border-slate-800 text-slate-300 rounded-xl p-5 shadow-lg space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 className="font-bold text-white text-xs flex items-center gap-1.5">
+                <Database className="h-4 w-4 text-emerald-450" />
+                {language === 'ar' ? 'خطوات تهيئة قاعدة البيانات' : 'Supabase SQL Setup'}
+              </h3>
+              <button
+                type="button"
+                onClick={copySQLToClipboard}
+                className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded transition-colors flex items-center gap-1 text-[10px]"
+                title="Copy SQL Installation Script"
+              >
+                {isCopied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copy SQL</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="text-[10px] leading-relaxed text-slate-400">
               {language === 'ar'
-                ? 'يرتبط هذا الجهاز بملف الحضور الموحد لأيبارشية الشباب. جميع الحركات تتم مزامنتها تلقائياً عند استعادة جودة الاتصال بالخادم الرئيسي.'
-                : 'All scan logs created by Attendance Officers are linked automatically to the church organization identity and validated against permanent member profiles.'}
+                ? 'أنشئ حساباً مجانياً على موقع Supabase، وافتح نافذة (SQL Editor)، ثم الصق الأوامر وقم بتشغيلها لتهيئة الجداول تلقائياً بضغطة زر واحدة!'
+                : '1. Create a free project at supabase.com. 2. Open SQL Editor and paste the copied database schema, then click Run. 3. Copy your project API Keys and paste them here.'}
             </p>
-            <div className="mt-5 text-[10px] font-mono opacity-60">
-              <p>Device Token: CAM-LOCAL-2026</p>
-              <p className="mt-1">PWA Client Status: Installed</p>
+
+            <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 font-mono text-[9px] text-slate-400 overflow-x-auto max-h-[140px] shadow-inner whitespace-pre">
+              {sqlSetupScript}
             </div>
           </div>
+
+          {/* Original Informative Side Banner */}
+          <div className="bg-indigo-950 text-white rounded-xl p-5 shadow-md relative overflow-hidden">
+            <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-white/5 pointer-events-none" />
+            <h3 className="text-xs font-bold opacity-90">{language === 'ar' ? 'تعليمات الإعداد والربط الميداني' : 'Parish Deployment Check'}</h3>
+            <p className="text-[10px] opacity-75 mt-2.5 leading-relaxed">
+              {language === 'ar'
+                ? 'تم استبدال فايربيس بنظام سوبابيز لدعم الاستمرارية وحل مشكلة المزامنة المعطلة. يدعم هذا النظام عمل التطبيق بالكامل بدون إنترنت لحماية البيانات في الكنائس والخدمات الكنسية الميدانية.'
+                : 'Firebase is replaced with a streamlined Supabase real-time client. Even when offline in parish basements, all logged QR scans auto-buffer safely in local cache queue and release immediately upon reconnection.'}
+            </p>
+            <div className="mt-4 pt-2 border-t border-white/5 text-[9px] font-mono opacity-50 flex justify-between">
+              <span>Client ID: CAMS-SUPABASE</span>
+              <span>PWA: Ready</span>
+            </div>
+          </div>
+
         </div>
 
       </div>
